@@ -1,2 +1,7 @@
 data/
 dis_venv/
+servers/cpp/build/
+logs/
+resultados/
+__pycache__/
+*.pyc
