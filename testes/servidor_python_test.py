@@ -1,5 +1,6 @@
 import queue
 import sys
+import unittest
 from pathlib import Path
 
 import numpy as np
@@ -105,6 +106,13 @@ def main() -> None:
         teste()
         print(f"OK: {teste.__name__}")
     print(f"{len(testes)} testes passaram.")
+
+
+def load_tests(_loader, _tests, _pattern):
+    suite = unittest.TestSuite()
+    for teste in (testar_algoritmos, testar_validacao_do_pedido, testar_fila):
+        suite.addTest(unittest.FunctionTestCase(teste))
+    return suite
 
 
 if __name__ == "__main__":
