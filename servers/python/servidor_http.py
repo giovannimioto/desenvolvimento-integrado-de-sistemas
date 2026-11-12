@@ -8,17 +8,15 @@ import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable
-
-import numpy as np
+from typing import Any
 
 from servers.python.algoritmos import cgne, cgnr
 from servers.python.config import Config
 from servers.python.fila import Estatisticas, FilaJobs, Job, Resposta
-from servers.python.logging_csv import LogCsv
+from servers.python.logging_csv import abrir_log, fechar_log, registrar_log
 from servers.python.modelos import Modelo
 from servers.python.protocolo import interpretar_pedido, para_json
-from servers.python.tempo import agora_iso, diferenca_ms
+from utilitarios import agora_iso, diferenca_ms
 
 
 class ServidorHTTP(ThreadingHTTPServer):
@@ -39,7 +37,8 @@ def iniciar_servidor(config: Config, modelos: dict[str, Modelo]) -> None:
     fila = FilaJobs(config.max_fila)
     estatisticas = Estatisticas()
     estatisticas_lock = threading.Lock()
-    log = LogCsv(config.pasta_logs)
+    arquivo_log = abrir_log(config.pasta_logs)
+    log_lock = threading.Lock()
     parando = threading.Event()
 
     def trabalhador() -> None:
@@ -52,16 +51,17 @@ def iniciar_servidor(config: Config, modelos: dict[str, Modelo]) -> None:
             try:
                 modelo = modelos[job.pedido.model]
                 inicio = time.perf_counter()
-                funcao: Callable[..., tuple[np.ndarray, int, float]]
-                funcao = cgne if job.pedido.algorithm == "CGNE" else cgnr
-                vetor, iteracoes, erro = funcao(modelo.matriz, job.pedido.g)
+                if job.pedido.algorithm == "CGNE":
+                    vetor, iteracoes, erro = cgne(modelo.matriz, job.pedido.g)
+                else:
+                    vetor, iteracoes, erro = cgnr(modelo.matriz, job.pedido.g)
                 fim = time.perf_counter()
                 resposta = Resposta(
                     job.pedido.client_id, job.pedido.signal_id, job.pedido.algorithm,
                     job.pedido.model, agora_iso(), agora_iso(), job.pedido.recebido_at,
                     iteracoes, diferenca_ms(inicio, fim),
                     diferenca_ms(job.pedido.recebido_em, inicio), erro, vetor)
-                log.registrar(resposta)
+                registrar_log(arquivo_log, resposta, log_lock)
                 job.resultado.put((resposta, None))
             except Exception as exc:
                 job.resultado.put((None, exc))
@@ -75,31 +75,37 @@ def iniciar_servidor(config: Config, modelos: dict[str, Modelo]) -> None:
     for trabalhador_thread in trabalhadores:
         trabalhador_thread.start()
 
+    def responder_json(handler: BaseHTTPRequestHandler, status: int,
+                       corpo: dict[str, Any], retry: bool = False) -> None:
+        dados = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Content-Length", str(len(dados)))
+        if retry:
+            handler.send_header("Retry-After", "1")
+        handler.end_headers()
+        handler.wfile.write(dados)
+
     class Handler(BaseHTTPRequestHandler):
-        def _responder(self, status: int, corpo: dict[str, Any]) -> None:
-            dados = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(dados)))
-            self.end_headers()
-            self.wfile.write(dados)
 
         def do_GET(self) -> None:
             if self.path != "/status":
-                self._responder(404, {"erro": "rota nao encontrada"})
+                responder_json(self, 404, {"erro": "rota nao encontrada"})
                 return
             with estatisticas_lock:
                 status = {
-                    "queue_size": fila.tamanho(), "workers": config.workers,
+                    "queue_size": fila.tamanho(),
+                    "workers": config.workers,
                     "processed": estatisticas.processados,
                     "in_progress": estatisticas.em_processamento,
-                    "rejected": estatisticas.rejeitados, "max_queue": config.max_fila,
+                    "rejected": estatisticas.rejeitados,
+                    "max_queue": config.max_fila,
                 }
-            self._responder(200, status)
+            responder_json(self, 200, status)
 
         def do_POST(self) -> None:
             if self.path != "/reconstruir":
-                self._responder(404, {"erro": "rota nao encontrada"})
+                responder_json(self, 404, {"erro": "rota nao encontrada"})
                 return
             try:
                 tamanho = int(self.headers.get("Content-Length", ""))
@@ -107,26 +113,22 @@ def iniciar_servidor(config: Config, modelos: dict[str, Modelo]) -> None:
                     raise ValueError
                 pedido = interpretar_pedido(self.rfile.read(tamanho), modelos)
             except (TypeError, ValueError) as exc:
-                self._responder(400, {"erro": str(exc)})
+                responder_json(self, 400, {"erro": str(exc)})
                 return
+
             job = Job(pedido, queue.Queue(maxsize=1))
             if not fila.inserir(job):
                 with estatisticas_lock:
                     estatisticas.rejeitados += 1
-                self.send_response(503)
-                self.send_header("Retry-After", "1")
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                corpo = json.dumps({"erro": "fila cheia"}).encode("utf-8")
-                self.send_header("Content-Length", str(len(corpo)))
-                self.end_headers()
-                self.wfile.write(corpo)
+                responder_json(self, 503, {"erro": "fila cheia"}, retry=True)
                 return
+
             resposta, erro = job.resultado.get()
             if erro is not None:
-                self._responder(500, {"erro": str(erro)})
+                responder_json(self, 500, {"erro": str(erro)})
             else:
                 assert resposta is not None
-                self._responder(200, para_json(resposta))
+                responder_json(self, 200, para_json(resposta))
 
         def log_message(self, _format: str, *_args: Any) -> None:
             del _format, _args
@@ -152,6 +154,6 @@ def iniciar_servidor(config: Config, modelos: dict[str, Modelo]) -> None:
         fila.fechar()
         for trabalhador_thread in trabalhadores:
             trabalhador_thread.join()
-        log.fechar()
+        fechar_log(arquivo_log, log_lock)
         print(f"[Servidor Python] Encerrado com sucesso. Total processados: "
               f"{estatisticas.processados}")

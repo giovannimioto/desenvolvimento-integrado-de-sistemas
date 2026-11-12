@@ -1,13 +1,13 @@
 """Prepara os dados em data/: extrai ZIPs e gera os arquivos .bin/.npy."""
 
-import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+
 RAIZ = Path(__file__).resolve().parents[2]
 DATA = RAIZ / "data"
-LER_DADOS = Path(__file__).with_name("ler_dados.py")
 
 TAMANHOS_ESPERADOS = {
     "H-1.bin": 50816 * 3600 * 4,
@@ -37,6 +37,19 @@ def extrair_sem_macosx(caminho_zip: Path, destino: Path) -> list[Path]:
     return extraidos
 
 
+def converter_csvs(pasta: Path) -> None:
+    for csv_path in sorted(pasta.glob("*.csv")):
+        npy_path = csv_path.with_suffix(".npy")
+        bin_path = csv_path.with_suffix(".bin")
+        if npy_path.exists() and bin_path.exists():
+            print("já convertido:", csv_path.name)
+            continue
+        matriz = pd.read_csv(csv_path, header=None).to_numpy(dtype=np.float32)
+        np.save(npy_path, matriz)
+        matriz.tofile(bin_path)
+        print(csv_path.name, "->", matriz.shape)
+
+
 def main() -> None:
     dados_zip = DATA / "Dados.zip"
     if not dados_zip.exists():
@@ -58,7 +71,7 @@ def main() -> None:
             extrair_sem_macosx(zip_path, DATA)
             csvs_temporarios.append(csv_path)
 
-    subprocess.run([sys.executable, str(LER_DADOS)], check=True)
+    converter_csvs(DATA)
 
     for nome_bin, bytes_esperados in TAMANHOS_ESPERADOS.items():
         caminho = DATA / nome_bin

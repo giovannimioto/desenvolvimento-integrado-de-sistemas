@@ -16,8 +16,8 @@ RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
-from carga.ganho import DIMENSOES_MODELO, aplicar_ganho
 from carga.sequencia import ler_sequencia_jsonl
+from utilitarios import DIMENSOES_MODELO, aplicar_ganho
 
 
 def carregar_sinal_bruto(pasta_dados: Path, nome_sinal: str, modelo: str) -> np.ndarray:

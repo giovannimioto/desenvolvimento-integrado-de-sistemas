@@ -10,8 +10,24 @@ Sistema cliente-servidor para reconstrução de imagens de ultrassom utilizando 
 - `servers/cpp/`: servidor HTTP em C++17 + Eigen3, ferramentas de validação offline e testes unitários.
 - `carga/`: cálculo de ganho, geração de sequência reprodutível (`.jsonl`) e cliente de carga concorrente.
 - `metricas/`: coletor de CPU/RAM (`psutil`) e fila (`/status`), gerador de relatórios `R1`-`R7` e orquestrador de experimentos.
+- `utilitarios.py`: biblioteca interna com leitura e gravação de arquivos, controle
+  de processos, gráficos e funções usadas na validação Python vs. C++.
 - `servers/python/preparar_dados.py`: extração dos arquivos compactados e geração dos binários `.bin`/`.npy` em `data/`.
 - `testes/validacao/` e `testes/smoke/`: validação numérica/visual C++ vs. Python e smoke test ponta a ponta.
+
+## Como entender o servidor Python
+
+O fluxo principal é propositalmente direto:
+
+1. `servidor.py` lê a configuração e carrega as matrizes uma única vez.
+2. `servidor_http.py` recebe a requisição, coloca o trabalho na fila e inicia os workers.
+3. `protocolo.py` valida o JSON e transforma os dados em um `Pedido`.
+4. `algoritmos.py` executa CGNE ou CGNR.
+5. `logging_csv.py` registra os metadados e `protocolo.py` monta a resposta JSON.
+
+Essa separação deixa cada arquivo com uma responsabilidade simples: configuração,
+dados, protocolo, fila, algoritmo ou registro. Para acompanhar uma requisição,
+basta seguir essa ordem, sem precisar conhecer todos os módulos ao mesmo tempo.
 
 ## Pré-requisitos
 
