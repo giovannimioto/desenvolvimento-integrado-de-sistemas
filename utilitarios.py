@@ -6,7 +6,8 @@ import csv
 import json
 import socket
 import subprocess
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -35,8 +36,13 @@ def aplicar_ganho_modelo(g: np.ndarray, modelo: str) -> np.ndarray:
 
 # Horários usados nos registros do servidor.
 
+_ANCORA_DATA = datetime.now().astimezone()
+_ANCORA_PERF = time.perf_counter()
+
+
 def agora_iso() -> str:
-    return datetime.now().astimezone().isoformat(timespec="milliseconds")
+    atual = _ANCORA_DATA + timedelta(seconds=time.perf_counter() - _ANCORA_PERF)
+    return atual.isoformat(timespec="milliseconds")
 
 
 def timestamp_arquivo() -> str:

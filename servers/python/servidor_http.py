@@ -51,14 +51,16 @@ def iniciar_servidor(config: Config, modelos: dict[str, Modelo]) -> None:
             try:
                 modelo = modelos[job.pedido.model]
                 inicio = time.perf_counter()
+                iniciado_em = agora_iso()
                 if job.pedido.algorithm == "CGNE":
                     vetor, iteracoes, erro = cgne(modelo.matriz, job.pedido.g)
                 else:
                     vetor, iteracoes, erro = cgnr(modelo.matriz, job.pedido.g)
                 fim = time.perf_counter()
+                finalizado_em = agora_iso()
                 resposta = Resposta(
                     job.pedido.client_id, job.pedido.signal_id, job.pedido.algorithm,
-                    job.pedido.model, agora_iso(), agora_iso(), job.pedido.recebido_at,
+                    job.pedido.model, iniciado_em, finalizado_em, job.pedido.recebido_at,
                     iteracoes, diferenca_ms(inicio, fim),
                     diferenca_ms(job.pedido.recebido_em, inicio), erro, vetor)
                 registrar_log(arquivo_log, resposta, log_lock)

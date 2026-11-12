@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# 1 thread de BLAS por worker: o paralelismo vem dos workers (evita oversubscription).
+for variavel in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
+    os.environ.setdefault(variavel, "1")
 
 RAIZ = Path(__file__).resolve().parents[2]
 if str(RAIZ) not in sys.path:
