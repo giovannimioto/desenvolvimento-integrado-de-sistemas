@@ -59,6 +59,9 @@ source dis_venv/bin/activate
 pip install -r requirements.txt
 
 # Extração dos dados e conversão para .bin/.npy (float32)
+# Obs.: a pasta data/ é ignorada pelo Git; antes de rodar em uma máquina nova,
+# crie data/ com os arquivos originais (H-1.csv.zip, H-2.csv.zip, Dados.zip e sinais)
+# ou copie a pasta data/ já convertida de outro PC.
 python servers/python/preparar_dados.py
 
 # Compilação e testes unitários do servidor C++
