@@ -75,13 +75,34 @@ def salvar_imagem(resposta: dict, destino: Path) -> None:
     figura, eixo = plt.subplots(figsize=(4, 4))
     eixo.imshow(imagem, cmap="gray")
     eixo.set_title(
-        f"{resposta['client_id']} / {resposta['signal_id']}\n"
-        f"{modelo} - {resposta['algorithm']}",
+        f"{resposta['client_id']} / {resposta['signal_id']} - "
+        f"{modelo} {resposta['algorithm']}\n"
+        f"inicio: {resposta['started_at']}\n"
+        f"fim: {resposta['finished_at']}\n"
+        f"iteracoes: {resposta['iterations']}",
+        fontsize=8,
     )
     eixo.axis("off")
     figura.tight_layout()
     figura.savefig(destino, dpi=120)
     plt.close(figura)
+
+
+def salvar_markdown(respostas: list[dict], destino: Path) -> None:
+    linhas = [
+        "# Relatorio de imagens reconstruidas",
+        "",
+        "| Imagem | Cliente | Sinal | Modelo | Algoritmo | Inicio | Termino | Iteracoes |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for r in respostas:
+        if r["status_code"] == 200:
+            linhas.append(
+                f"| ![]({r['imagem']}) | {r['client_id']} | {r['signal_id']} | "
+                f"{r['model']} | {r['algorithm']} | {r['started_at']} | "
+                f"{r['finished_at']} | {r['iterations']} |"
+            )
+    destino.write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
 def gerar_relatorio(resultado: dict, pasta_saida: Path) -> None:
@@ -104,6 +125,7 @@ def gerar_relatorio(resultado: dict, pasta_saida: Path) -> None:
     }
     with (pasta_saida / "relatorio.json").open("w", encoding="utf-8") as arquivo:
         json.dump(relatorio, arquivo, indent=2, ensure_ascii=False)
+    salvar_markdown(respostas, pasta_saida / "relatorio.md")
 
 
 def main() -> None:
