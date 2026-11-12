@@ -11,40 +11,68 @@ import numpy as np
 
 from servers.python.fila import Pedido, Resposta
 from servers.python.modelos import Modelo
-from servers.python.tempo import agora_iso
+from utilitarios import agora_iso
 
 
-def interpretar_pedido(corpo: bytes, modelos: dict[str, Modelo]) -> Pedido:
+def _ler_json(corpo: bytes) -> dict[str, Any]:
     try:
         dados = json.loads(corpo.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("JSON invalido") from exc
     if not isinstance(dados, dict):
         raise ValueError("JSON invalido")
+    return dados
+
+
+def _validar_identificacao(dados: dict[str, Any]) -> None:
     for campo in ("client_id", "signal_id", "model", "algorithm"):
         if not isinstance(dados.get(campo), str):
             raise ValueError(f"campo obrigatorio ausente ou invalido: {campo}")
-    if not isinstance(dados.get("g"), list):
-        raise ValueError("campo 'g' deve ser um array numerico")
     if not dados["client_id"] or not dados["signal_id"]:
         raise ValueError("client_id e signal_id nao podem ser vazios")
+
+
+def _ler_vetor(dados: dict[str, Any], tamanho_esperado: int) -> np.ndarray:
+    valores = dados.get("g")
+    if not isinstance(valores, list):
+        raise ValueError("campo 'g' deve ser um array numerico")
+    if len(valores) != tamanho_esperado:
+        raise ValueError(
+            f"tamanho de g ({len(valores)}) diferente do esperado ({tamanho_esperado})"
+        )
+    if any(
+        isinstance(valor, bool)
+        or not isinstance(valor, (int, float))
+        or not math.isfinite(float(valor))
+        for valor in valores
+    ):
+        raise ValueError("elemento nao numerico em g")
+    vetor = np.asarray(valores, dtype=np.float32)
+    if not np.isfinite(vetor).all():
+        raise ValueError("elemento fora do intervalo float32 em g")
+    return vetor
+
+
+def interpretar_pedido(corpo: bytes, modelos: dict[str, Modelo]) -> Pedido:
+    dados = _ler_json(corpo)
+    _validar_identificacao(dados)
+
     modelo = modelos.get(dados["model"])
     if modelo is None:
         raise ValueError(f"modelo desconhecido: {dados['model']}")
     if dados["algorithm"] not in ("CGNE", "CGNR"):
         raise ValueError(f"algoritmo desconhecido: {dados['algorithm']}")
-    esperado = modelo.matriz.shape[0]
-    if len(dados["g"]) != esperado:
-        raise ValueError(f"tamanho de g ({len(dados['g'])}) diferente do esperado ({esperado})")
-    if any(isinstance(valor, bool) or not isinstance(valor, (int, float))
-           or not math.isfinite(float(valor)) for valor in dados["g"]):
-        raise ValueError("elemento nao numerico em g")
-    vetor = np.asarray(dados["g"], dtype=np.float32)
-    if not np.isfinite(vetor).all():
-        raise ValueError("elemento fora do intervalo float32 em g")
-    return Pedido(dados["client_id"], dados["signal_id"], dados["model"],
-                  dados["algorithm"], vetor,
-                  time.perf_counter(), agora_iso())
+
+    vetor = _ler_vetor(dados, modelo.matriz.shape[0])
+    return Pedido(
+        client_id=dados["client_id"],
+        signal_id=dados["signal_id"],
+        model=dados["model"],
+        algorithm=dados["algorithm"],
+        g=vetor,
+        recebido_em=time.perf_counter(),
+        recebido_at=agora_iso(),
+    )
 
 
 def para_json(resposta: Resposta) -> dict[str, Any]:

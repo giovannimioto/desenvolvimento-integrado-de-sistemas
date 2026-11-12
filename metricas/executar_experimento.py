@@ -3,7 +3,6 @@
 import argparse
 import json
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -20,19 +19,13 @@ if str(RAIZ) not in sys.path:
 
 from carga.gerador_carga import executar_carga
 from carga.sequencia import gerar_sequencia, ler_sequencia_jsonl, salvar_sequencia_jsonl
-from metricas.apoio import encerrar, salvar_json
+from utilitarios import encerrar, porta_livre, salvar_json
 from metricas.relatorio import gerar_relatorio_comparativo, gerar_relatorio_unico
 
 BIN_SERVIDOR = RAIZ / "servers" / "cpp" / "build" / "servidor"
 MONITOR = RAIZ / "metricas" / "monitor.py"
 RESULTADOS = RAIZ / "resultados"
 DATA = RAIZ / "data"
-
-
-def porta_livre() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 def aguardar_status(url: str, limite: float = 120) -> None:

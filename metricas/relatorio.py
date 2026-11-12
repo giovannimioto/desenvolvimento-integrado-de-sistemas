@@ -16,7 +16,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
-from metricas.apoio import ler_csv, salvar_grafico, salvar_json
+from utilitarios import ler_csv, salvar_grafico, salvar_json
 
 
 def ler_reconstrucoes(pasta: Path) -> list[dict]:

@@ -14,8 +14,7 @@ RAIZ = Path(__file__).resolve().parents[2]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
-from carga.ganho import DIMENSOES_MODELO, aplicar_ganho
-from testes.validacao.apoio import ALGORITMOS
+from utilitarios import ALGORITMOS, DIMENSOES_MODELO, aplicar_ganho
 
 DATA = RAIZ / "data"
 PASTA_REF = DATA / "referencias"

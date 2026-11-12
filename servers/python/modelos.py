@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from carga.ganho import DIMENSOES_MODELO
 from servers.python.config import Config
+from utilitarios import DIMENSOES_MODELO
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class Modelo:
 
 
 def carregar_modelos(config: Config) -> dict[str, Modelo]:
+    """Carrega cada matriz uma vez e deixa-a pronta para os workers."""
     modelos: dict[str, Modelo] = {}
     for nome in (item.strip() for item in config.modelos.split(",")):
         if not nome:
@@ -28,7 +29,7 @@ def carregar_modelos(config: Config) -> dict[str, Modelo]:
             amostras, sensores, lado, nome_h = DIMENSOES_MODELO[nome]
         except KeyError as exc:
             raise ValueError(f"modelo desconhecido na configuracao: {nome}") from exc
-        linhas = 50816 if nome == "60x60" else 27904
+        linhas = amostras * sensores
         colunas = lado * lado
         caminho = config.pasta_dados / f"{nome_h}.bin"
         elementos = linhas * colunas
@@ -37,8 +38,15 @@ def carregar_modelos(config: Config) -> dict[str, Modelo]:
         if caminho.stat().st_size != elementos * np.dtype(np.float32).itemsize:
             raise ValueError(f"tamanho inesperado em {caminho}")
         matriz = np.fromfile(caminho, dtype=np.float32, count=elementos)
-        modelos[nome] = Modelo(nome, lado, amostras, sensores,
-                               matriz.reshape((linhas, colunas)))
+        if nome in modelos:
+            raise ValueError(f"modelo repetido na configuracao: {nome}")
+        modelos[nome] = Modelo(
+            nome=nome,
+            lado=lado,
+            amostras=amostras,
+            sensores=sensores,
+            matriz=matriz.reshape((linhas, colunas)),
+        )
         print(f"[Modelos] {nome} ({linhas}x{colunas}, "
               f"{matriz.nbytes / (1024 * 1024):.2f} MB) carregado")
     if not modelos:

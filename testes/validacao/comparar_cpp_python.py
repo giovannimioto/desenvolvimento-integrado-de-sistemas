@@ -13,8 +13,7 @@ RAIZ = Path(__file__).resolve().parents[2]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
-from carga.ganho import DIMENSOES_MODELO
-from testes.validacao.apoio import executar_cpp, salvar_comparacao_png
+from utilitarios import DIMENSOES_MODELO, executar_cpp, salvar_comparacao_png
 
 DATA = RAIZ / "data"
 PASTA_REF = DATA / "referencias"
