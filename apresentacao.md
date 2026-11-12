@@ -94,6 +94,22 @@ O teste demonstra:
 - Retry automático;
 - Geração das imagens reconstruídas.
 
+O cliente também pode ser executado diretamente para gerar a sequência e o
+relatório das imagens:
+
+```powershell
+python client/cliente.py --url http://127.0.0.1:8081
+```
+
+Para comparar os dois servidores com exatamente os mesmos sinais, reutilize o
+arquivo `resultados/cliente/sequencia.jsonl` na segunda execução:
+
+```powershell
+python client/cliente.py --url http://127.0.0.1:8080 `
+  --sequencia resultados/cliente/sequencia.jsonl `
+  --saida resultados/cliente-cpp
+```
+
 Para mostrar o status do servidor:
 
 ### Windows — PowerShell

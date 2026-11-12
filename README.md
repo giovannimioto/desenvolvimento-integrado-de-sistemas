@@ -8,7 +8,8 @@ Sistema cliente-servidor para reconstrução de imagens de ultrassom utilizando 
   `algoritmos.py`, `fila.py`, `protocolo.py`, `logging_csv.py` e
   `servidor_http.py`).
 - `servers/cpp/`: servidor HTTP em C++17 + Eigen3, ferramentas de validação offline e testes unitários.
-- `carga/`: cálculo de ganho, geração de sequência reprodutível (`.jsonl`) e cliente de carga concorrente.
+- `carga/`: geração de sequência reprodutível (`.jsonl`) e cliente de carga concorrente.
+- `client/`: aplicação cliente principal, com clientes simultâneos e relatório visual das reconstruções.
 - `metricas/`: coletor de CPU/RAM (`psutil`) e fila (`/status`), gerador de relatórios `R1`-`R7` e orquestrador de experimentos.
 - `utilitarios.py`: biblioteca interna com leitura e gravação de arquivos, controle
   de processos, gráficos e funções usadas na validação Python vs. C++.
@@ -102,6 +103,37 @@ python servers/python/servidor.py --port 8081 --workers 4 --max-queue 8
 
 As mesmas opções de CLI e variáveis de ambiente do servidor C++ são aceitas. O
 diretório de logs padrão é `logs/python`; use `--pasta-logs` para alterá-lo.
+
+## Execução do cliente
+
+Com um dos servidores em execução, o cliente inicia 3 clientes simultâneos,
+envia 15 sinais por cliente, escolhe modelos e algoritmos de forma
+reprodutível e aplica o ganho antes de enviar cada vetor:
+
+```bash
+python client/cliente.py --url http://127.0.0.1:8081
+```
+
+O cliente usa um pool limitado de threads. Para controlar esse limite:
+
+```bash
+python client/cliente.py --url http://127.0.0.1:8081 --threads-clientes 8
+```
+
+O cliente salva em `resultados/cliente/`:
+
+- `sequencia.jsonl`: sequência que pode ser reutilizada nos dois servidores;
+- `respostas.jsonl`: respostas recebidas;
+- `relatorio.json`: metadados de cada reconstrução e resumo da execução;
+- `imagens/`: imagens reconstruídas com identificação do cliente, sinal, modelo e algoritmo.
+
+Para repetir exatamente uma execução, use a sequência salva:
+
+```bash
+python client/cliente.py --url http://127.0.0.1:8081 \
+  --sequencia resultados/cliente/sequencia.jsonl \
+  --saida resultados/cliente-python
+```
 
 ## Validação e experimentos
 

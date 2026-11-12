@@ -16,12 +16,12 @@ O projeto é um sistema cliente-servidor de reconstrução de imagens de ultrass
 
 ### Cliente
 
-- [ ] C1: iniciar simultaneamente no mínimo 3 clientes.
-- [ ] C2: cada cliente envia no mínimo 15 sinais (g), em intervalos de tempo aleatórios.
-- [ ] C3: o ganho de sinal e o modelo da imagem (60×60 ou 30×30) são definidos aleatoriamente.
-- [ ] C4: o ganho de sinal é calculado no cliente.
-- [ ] C5: gerar um relatório com todas as imagens reconstruídas e as informações de cada uma.
-- [ ] C6: a sequência de sinais enviada deve ser a mesma para as duas versões do servidor (seed fixa ou sequência gravada em arquivo).
+- [x] C1: iniciar simultaneamente no mínimo 3 clientes.
+- [x] C2: cada cliente envia no mínimo 15 sinais (g), em intervalos de tempo aleatórios.
+- [x] C3: o ganho de sinal e o modelo da imagem (60×60 ou 30×30) são definidos aleatoriamente.
+- [x] C4: o ganho de sinal é calculado no cliente.
+- [x] C5: gerar um relatório com todas as imagens reconstruídas e as informações de cada uma.
+- [x] C6: a sequência de sinais enviada deve ser a mesma para as duas versões do servidor (seed fixa ou sequência gravada em arquivo).
 
 ### Servidor
 

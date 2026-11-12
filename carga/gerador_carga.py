@@ -1,6 +1,7 @@
 """Gerador de carga multi-cliente com aplicacao de ganho e retry/backoff no HTTP 503."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import random
 import sys
@@ -122,6 +123,7 @@ def executar_carga(
     backoff_inicial: float = 0.5,
     salvar_f: bool = False,
     timeout_leitura: float = 600.0,
+    threads_clientes: int | None = None,
 ) -> dict:
     # Pre-carrega os sinais brutos em memoria (o ganho e calculado por cada cliente no envio)
     sinais_brutos: dict[str, np.ndarray] = {}
@@ -181,15 +183,20 @@ def executar_carga(
                     contadores["erros_finais"] += 1
                 respostas_registradas.append(registro)
 
+    if threads_clientes is not None and threads_clientes <= 0:
+        raise ValueError("threads_clientes deve ser maior que zero")
+
+    limite_threads = threads_clientes or min(32, max(1, len(por_cliente)))
+    if por_cliente:
+        limite_threads = min(limite_threads, len(por_cliente))
     t0_parede = time.perf_counter()
-    threads = [
-        threading.Thread(target=rotina_cliente, args=(envios,))
-        for _, envios in sorted(por_cliente.items())
-    ]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+    with ThreadPoolExecutor(max_workers=limite_threads) as executor:
+        tarefas = [
+            executor.submit(rotina_cliente, envios)
+            for _, envios in sorted(por_cliente.items())
+        ]
+        for tarefa in tarefas:
+            tarefa.result()
     tempo_parede_s = time.perf_counter() - t0_parede
 
     if caminho_respostas is not None:
@@ -221,6 +228,12 @@ def main() -> None:
     parser.add_argument("--max-tentativas", type=int, default=7)
     parser.add_argument("--backoff-inicial", type=float, default=0.5)
     parser.add_argument("--salvar-f", action="store_true")
+    parser.add_argument(
+        "--threads-clientes",
+        type=int,
+        default=None,
+        help="limite de threads usadas para executar os clientes (padrao: no maximo 32)",
+    )
     args = parser.parse_args()
 
     itens = ler_sequencia_jsonl(args.sequencia)
@@ -232,6 +245,7 @@ def main() -> None:
         max_tentativas=args.max_tentativas,
         backoff_inicial=args.backoff_inicial,
         salvar_f=args.salvar_f,
+        threads_clientes=args.threads_clientes,
     )
     print(json.dumps(resultado["resumo"], indent=2, ensure_ascii=False))
 
