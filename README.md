@@ -95,7 +95,10 @@ Opções disponíveis (prioridade: CLI > variável de ambiente > padrão):
 ## Execução do servidor Python
 
 O servidor Python implementa o mesmo protocolo HTTP, fila de reconstrução, pool de
-workers, limite de fila e log CSV do servidor C++:
+workers, limite de fila e log CSV do servidor C++. Antes de importar o NumPy,
+`servidor.py` já fixa `1` thread de BLAS por worker (`OPENBLAS_NUM_THREADS`,
+`MKL_NUM_THREADS` e `OMP_NUM_THREADS` via `setdefault`), evitando *oversubscription*
+entre os workers:
 
 ```bash
 python servers/python/servidor.py --port 8081 --workers 4 --max-queue 8
@@ -125,7 +128,8 @@ O cliente salva em `resultados/cliente/`:
 - `sequencia.jsonl`: sequência que pode ser reutilizada nos dois servidores;
 - `respostas.jsonl`: respostas recebidas;
 - `relatorio.json`: metadados de cada reconstrução e resumo da execução;
-- `imagens/`: imagens reconstruídas com identificação do cliente, sinal, modelo e algoritmo.
+- `relatorio.md`: tabela em Markdown com todas as imagens reconstruídas e seus metadados;
+- `imagens/`: imagens reconstruídas com identificação do cliente, sinal, modelo, algoritmo, início, término e iterações no título.
 
 Para repetir exatamente uma execução, use a sequência salva:
 
@@ -138,8 +142,9 @@ python client/cliente.py --url http://127.0.0.1:8081 \
 ## Validação e experimentos
 
 ```bash
-# Operações matriciais contra Dados.zip
+# Operações matriciais da Fase 2 contra Dados.zip (C++ e Python)
 ./servers/cpp/build/fase2_operacoes data/fase2
+python servers/python/fase2_operacoes.py
 
 # Validação numérica e visual (CGNE e CGNR) contra NumPy
 python testes/validacao/gerar_referencias.py
@@ -149,10 +154,14 @@ python testes/validacao/comparar_cpp_python.py
 python testes/smoke/smoke_demo.py --perfil demo
 
 # Bateria de experimentos (varredura E0, baseline E1, saturação E2 e controle E3)
-python metricas/executar_experimento.py --cenario todos
+python metricas/executar_experimento.py --cenario todos --servidor cpp
+python metricas/executar_experimento.py --cenario todos --servidor python
 
-# Comparação entre dois experimentos (ex.: Python vs. C++)
-python metricas/relatorio.py --comparar resultados/<exp_a> resultados/<exp_b>
+# Comparação entre os servidores Python e C++ (mesma sequência)
+python metricas/relatorio.py --comparar resultados/E1_baseline_python resultados/E1_baseline_cpp \
+  --saida resultados/comparacao_E1_python_vs_cpp
+python metricas/relatorio.py --comparar resultados/E3_saturacao_com_controle_python \
+  resultados/E3_saturacao_com_controle_cpp --saida resultados/comparacao_E3_python_vs_cpp
 ```
 
 ## Endpoints HTTP
