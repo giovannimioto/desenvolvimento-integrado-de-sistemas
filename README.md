@@ -4,11 +4,13 @@ Sistema cliente-servidor para reconstrução de imagens de ultrassom utilizando 
 
 ## Estrutura do projeto
 
-- `servers/python/`: protótipos e servidor em Python.
+- `servers/python/`: servidor Python modular (`config.py`, `modelos.py`,
+  `algoritmos.py`, `fila.py`, `protocolo.py`, `logging_csv.py` e
+  `servidor_http.py`).
 - `servers/cpp/`: servidor HTTP em C++17 + Eigen3, ferramentas de validação offline e testes unitários.
 - `carga/`: cálculo de ganho, geração de sequência reprodutível (`.jsonl`) e cliente de carga concorrente.
 - `metricas/`: coletor de CPU/RAM (`psutil`) e fila (`/status`), gerador de relatórios `R1`-`R7` e orquestrador de experimentos.
-- `scripts/preparar_dados.py`: extração dos arquivos compactados e geração dos binários `.bin`/`.npy` em `data/`.
+- `servers/python/preparar_dados.py`: extração dos arquivos compactados e geração dos binários `.bin`/`.npy` em `data/`.
 - `testes/validacao/` e `testes/smoke/`: validação numérica/visual C++ vs. Python e smoke test ponta a ponta.
 
 ## Pré-requisitos
@@ -40,7 +42,7 @@ source dis_venv/bin/activate
 pip install -r requirements.txt
 
 # Extração dos dados e conversão para .bin/.npy (float32)
-python scripts/preparar_dados.py
+python servers/python/preparar_dados.py
 
 # Compilação e testes unitários do servidor C++
 make -C servers/cpp
@@ -72,6 +74,18 @@ Opções disponíveis (prioridade: CLI > variável de ambiente > padrão):
 | `--data-dir` / `--pasta-dados` | `SERVIDOR_PASTA_DADOS` | `data` | Diretório das matrizes `.bin` |
 | `--log-dir` / `--pasta-logs` | `SERVIDOR_PASTA_LOGS` | `logs/cpp` | Diretório dos logs CSV |
 | `--modelos` / `--models` | `SERVIDOR_MODELOS` | `30x30,60x60` | Modelos carregados na inicialização |
+
+## Execução do servidor Python
+
+O servidor Python implementa o mesmo protocolo HTTP, fila de reconstrução, pool de
+workers, limite de fila e log CSV do servidor C++:
+
+```bash
+python servers/python/servidor.py --port 8081 --workers 4 --max-queue 8
+```
+
+As mesmas opções de CLI e variáveis de ambiente do servidor C++ são aceitas. O
+diretório de logs padrão é `logs/python`; use `--pasta-logs` para alterá-lo.
 
 ## Validação e experimentos
 

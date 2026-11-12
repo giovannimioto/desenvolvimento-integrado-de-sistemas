@@ -1,13 +1,13 @@
-"""Prepara os dados em data/: extrai ZIPs (ignorando __MACOSX) e gera os arquivos .bin/.npy."""
+"""Prepara os dados em data/: extrai ZIPs e gera os arquivos .bin/.npy."""
 
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parents[1]
+RAIZ = Path(__file__).resolve().parents[2]
 DATA = RAIZ / "data"
-LER_DADOS = RAIZ / "servers" / "python" / "ler_dados.py"
+LER_DADOS = Path(__file__).with_name("ler_dados.py")
 
 TAMANHOS_ESPERADOS = {
     "H-1.bin": 50816 * 3600 * 4,
@@ -38,13 +38,11 @@ def extrair_sem_macosx(caminho_zip: Path, destino: Path) -> list[Path]:
 
 
 def main() -> None:
-    # 1. Extrai Dados.zip da Fase 2 em data/fase2/
     dados_zip = DATA / "Dados.zip"
     if not dados_zip.exists():
         raise FileNotFoundError(f"Arquivo nao encontrado: {dados_zip}")
     extrair_sem_macosx(dados_zip, DATA / "fase2")
 
-    # 2. Extrai H-1.csv e H-2.csv se os .bin/.npy ainda nao existirem
     csvs_temporarios = []
     for nome_base in ("H-1", "H-2"):
         bin_path = DATA / f"{nome_base}.bin"
@@ -60,10 +58,8 @@ def main() -> None:
             extrair_sem_macosx(zip_path, DATA)
             csvs_temporarios.append(csv_path)
 
-    # 3. Executa ler_dados.py para converter todos os CSVs de data/ em .npy e .bin
     subprocess.run([sys.executable, str(LER_DADOS)], check=True)
 
-    # 4. Confere os tamanhos em bytes de todos os .bin gerados
     for nome_bin, bytes_esperados in TAMANHOS_ESPERADOS.items():
         caminho = DATA / nome_bin
         if not caminho.exists():
@@ -71,11 +67,11 @@ def main() -> None:
         tamanho = caminho.stat().st_size
         if tamanho != bytes_esperados:
             raise RuntimeError(
-                f"Tamanho incorreto em {nome_bin}: {tamanho} bytes (esperado {bytes_esperados})"
+                f"Tamanho incorreto em {nome_bin}: {tamanho} bytes "
+                f"(esperado {bytes_esperados})"
             )
         print(f"OK: {nome_bin} ({tamanho:,} bytes)")
 
-    # 5. Remove CSVs gigantes ja convertidos para economizar espaco em disco
     for csv_temp in csvs_temporarios:
         if csv_temp.exists():
             csv_temp.unlink()
@@ -84,4 +80,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

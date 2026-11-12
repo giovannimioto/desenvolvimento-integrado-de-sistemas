@@ -29,6 +29,90 @@ def carregar_sinal_bruto(pasta_dados: Path, nome_sinal: str, modelo: str) -> np.
     return np.fromfile(caminho_bin, dtype=np.float32, count=S * N)
 
 
+def _esperar_retry(resp: requests.Response, tentativa: int, backoff_inicial: float) -> None:
+    retry_hdr = float(resp.headers.get("Retry-After", backoff_inicial))
+    jitter = random.uniform(0.0, 0.25)
+    espera = min(4.0, max(backoff_inicial, retry_hdr * 0.5)
+                 * (1.5 ** min(tentativa, 5))) + jitter
+    time.sleep(espera)
+
+
+def _enviar_com_retry(
+    sessao: requests.Session,
+    url: str,
+    payload: dict,
+    max_tentativas: int,
+    backoff_inicial: float,
+    timeout_leitura: float,
+    contadores: dict[str, int],
+    trava: threading.Lock,
+) -> tuple[bool, int, int, dict]:
+    tentativas_503 = 0
+    status_final = 0
+    corpo_resp: dict = {}
+    for tentativa in range(max_tentativas):
+        try:
+            resp = sessao.post(url, json=payload, timeout=timeout_leitura)
+            status_final = resp.status_code
+            if resp.status_code == 200:
+                return True, status_final, tentativas_503, resp.json()
+            if resp.status_code != 503:
+                return False, status_final, tentativas_503, {
+                    "erro_status": resp.status_code,
+                    "texto": resp.text,
+                }
+            tentativas_503 += 1
+            with trava:
+                contadores["rejeicoes_503"] += 1
+            if tentativa + 1 < max_tentativas:
+                _esperar_retry(resp, tentativa, backoff_inicial)
+        except Exception as exc:
+            corpo_resp = {"excecao": str(exc)}
+            break
+    return False, status_final, tentativas_503, corpo_resp
+
+
+def _montar_registro(
+    item: dict,
+    modelo: str,
+    status_final: int,
+    tentativas_503: int,
+    latencia_ms: float,
+    sucesso: bool,
+    corpo_resp: dict,
+    salvar_f: bool,
+) -> dict:
+    registro = {
+        "client_id": item["client_id"],
+        "signal_id": item["signal_id"],
+        "signal_file": item["signal_file"],
+        "model": modelo,
+        "algorithm": item["algorithm"],
+        "status_code": status_final,
+        "tentativas_503": tentativas_503,
+        "latencia_cliente_ms": round(latencia_ms, 3),
+    }
+    if not sucesso:
+        registro["detalhe_erro"] = corpo_resp
+        return registro
+
+    f_lista = corpo_resp.get("f", [])
+    f_arr = np.asarray(f_lista, dtype=np.float32)
+    registro.update({
+        "started_at": corpo_resp.get("started_at"),
+        "finished_at": corpo_resp.get("finished_at"),
+        "iterations": corpo_resp.get("iterations"),
+        "duration_ms": corpo_resp.get("duration_ms"),
+        "wait_ms": corpo_resp.get("wait_ms"),
+        "error": corpo_resp.get("error"),
+        "len_f": int(f_arr.size),
+        "norma_f": float(np.linalg.norm(f_arr)) if f_arr.size else 0.0,
+    })
+    if salvar_f:
+        registro["f"] = f_lista
+    return registro
+
+
 def executar_carga(
     url_base: str,
     itens_sequencia: list[dict],
@@ -61,7 +145,7 @@ def executar_carga(
 
     url_reconstruir = f"{url_base.rstrip('/')}/reconstruir"
 
-    def rotina_cliente( _, envios: list[dict]) -> None:
+    def rotina_cliente(envios: list[dict]) -> None:
         sessao = requests.Session()
         for item in envios:
             atraso = float(item.get("delay_s", 0.0))
@@ -80,64 +164,15 @@ def executar_carga(
             }
 
             t_inicio_cliente = time.perf_counter()
-            tentativas_503_item = 0
-            sucesso = False
-            status_final = 0
-            corpo_resp = {}
-
-            for tentativa in range(max_tentativas):
-                try:
-                    resp = sessao.post(url_reconstruir, json=payload, timeout=timeout_leitura)
-                    status_final = resp.status_code
-                    if resp.status_code == 200:
-                        corpo_resp = resp.json()
-                        sucesso = True
-                        break
-                    if resp.status_code == 503:
-                        tentativas_503_item += 1
-                        with trava:
-                            contadores["rejeicoes_503"] += 1
-                        if tentativa + 1 >= max_tentativas:
-                            break
-                        retry_hdr = float(resp.headers.get("Retry-After", backoff_inicial))
-                        jitter = random.uniform(0.0, 0.25)
-                        espera = min(4.0, max(backoff_inicial, retry_hdr * 0.5) * (1.5 ** min(tentativa, 5))) + jitter
-                        time.sleep(espera)
-                        continue
-                    corpo_resp = {"erro_status": resp.status_code, "texto": resp.text}
-                    break
-                except Exception as exc:
-                    corpo_resp = {"excecao": str(exc)}
-                    break
-
-            latencia_cliente_ms = (time.perf_counter() - t_inicio_cliente) * 1000.0
-            registro = {
-                "client_id": item["client_id"],
-                "signal_id": item["signal_id"],
-                "signal_file": item["signal_file"],
-                "model": modelo,
-                "algorithm": item["algorithm"],
-                "status_code": status_final,
-                "tentativas_503": tentativas_503_item,
-                "latencia_cliente_ms": round(latencia_cliente_ms, 3),
-            }
-            if sucesso:
-                f_lista = corpo_resp.get("f", [])
-                f_arr = np.asarray(f_lista, dtype=np.float32)
-                registro.update({
-                    "started_at": corpo_resp.get("started_at"),
-                    "finished_at": corpo_resp.get("finished_at"),
-                    "iterations": corpo_resp.get("iterations"),
-                    "duration_ms": corpo_resp.get("duration_ms"),
-                    "wait_ms": corpo_resp.get("wait_ms"),
-                    "error": corpo_resp.get("error"),
-                    "len_f": int(f_arr.size),
-                    "norma_f": float(np.linalg.norm(f_arr)) if f_arr.size else 0.0,
-                })
-                if salvar_f:
-                    registro["f"] = f_lista
-            else:
-                registro["detalhe_erro"] = corpo_resp
+            sucesso, status_final, tentativas_503, corpo_resp = _enviar_com_retry(
+                sessao, url_reconstruir, payload, max_tentativas, backoff_inicial,
+                timeout_leitura, contadores, trava,
+            )
+            registro = _montar_registro(
+                item, modelo, status_final, tentativas_503,
+                (time.perf_counter() - t_inicio_cliente) * 1000.0,
+                sucesso, corpo_resp, salvar_f,
+            )
 
             with trava:
                 if sucesso:
@@ -148,8 +183,8 @@ def executar_carga(
 
     t0_parede = time.perf_counter()
     threads = [
-        threading.Thread(target=rotina_cliente, args=(cid, envios))
-        for cid, envios in sorted(por_cliente.items())
+        threading.Thread(target=rotina_cliente, args=(envios,))
+        for _, envios in sorted(por_cliente.items())
     ]
     for t in threads:
         t.start()
