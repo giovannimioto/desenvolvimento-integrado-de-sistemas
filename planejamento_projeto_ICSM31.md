@@ -25,7 +25,7 @@ O projeto é um sistema cliente-servidor de reconstrução de imagens de ultrass
 
 ### Servidor
 
-- [ ] S1: uma versão em linguagem interpretada e não fortemente tipada.
+- [x] S1: uma versão em linguagem interpretada e não fortemente tipada.
 - [x] S2: uma versão em linguagem compilada e fortemente tipada.
 - [x] S3: executar o algoritmo de reconstrução (CGNE e/ou CGNR, conforme escolha do usuário).
 - [x] S4: parar quando o erro ε for menor que 1e-4 ou ao chegar a 10 iterações (o "1e10-4" do enunciado deve ser erro de digitação).
@@ -98,7 +98,7 @@ O projeto é um sistema cliente-servidor de reconstrução de imagens de ultrass
 - [x] Registrar nos metadados início, fim, iterações, algoritmo, cliente e sinal.
 - [x] Implementar o coletor de métricas em intervalo fixo: CPU, memória e tamanho da fila.
 - [x] Calcular média e moda da fila, tempo médio de reconstrução e total de imagens.
-- [ ] Repetir na outra linguagem, com a mesma interface.
+- [x] Repetir na outra linguagem, com a mesma interface.
 
 ### Fase 6: Saturação e controle (atividade semanal 4)
 
