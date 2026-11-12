@@ -166,13 +166,16 @@ def gerar_relatorio_comparativo(pasta_a: Path, pasta_b: Path, pasta_saida: Path)
 
 
 def _markdown_comparativo(a: dict, b: dict) -> str:
-    linhas = ["# Comparacao R1–R7", "", "| Metrica | A | B |", "|---|---:|---:|"]
+    linhas = ["# Comparacao R1–R7", "",
+              f"| Metrica | {a['experimento']} | {b['experimento']} |", "|---|---:|---:|"]
     for nome, chave, formato in (
         ("Imagens", "r1_total_imagens", "{}"), ("Tempo total (s)", "r2_tempo_total_s", "{:.3f}"),
         ("CPU media (%)", "cpu_proc_media_pct", "{:.1f}"), ("RSS pico (MB)", "rss_pico_mb", "{:.1f}"),
         ("Fila media", "r5_fila_media", "{:.3f}"), ("Fila moda", "r6_fila_moda", "{}"),
         ("Reconstrucao media (ms)", "r7_tempo_medio_reconstrucao_ms", "{:.2f}"),
         ("Vazao (imagens/s)", "vazao_imagens_por_s", "{:.3f}"),
+        ("Latencia p95 (ms)", "latencia_p95_ms", "{:.1f}"),
+        ("Rejeicoes 503", "rejeicoes_503", "{}"),
     ):
         linhas.append(f"| {nome} | {formato.format(a[chave])} | {formato.format(b[chave])} |")
     return "\n".join(linhas) + "\n"

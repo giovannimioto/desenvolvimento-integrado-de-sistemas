@@ -23,9 +23,15 @@ from utilitarios import encerrar, porta_livre, salvar_json
 from metricas.relatorio import gerar_relatorio_comparativo, gerar_relatorio_unico
 
 BIN_SERVIDOR = RAIZ / "servers" / "cpp" / "build" / "servidor"
+SERVIDOR_PYTHON = RAIZ / "servers" / "python" / "servidor.py"
 MONITOR = RAIZ / "metricas" / "monitor.py"
 RESULTADOS = RAIZ / "resultados"
 DATA = RAIZ / "data"
+NOMES_CENARIOS = {
+    "E1": "E1_baseline",
+    "E2": "E2_saturacao_sem_controle",
+    "E3": "E3_saturacao_com_controle",
+}
 
 
 def aguardar_status(url: str, limite: float = 120) -> None:
@@ -40,9 +46,11 @@ def aguardar_status(url: str, limite: float = 120) -> None:
     raise TimeoutError(f"Servidor nao respondeu em {url} apos {limite} s")
 
 
-def comando_servidor(porta: int, workers: int, fila: int, modelos: str, logs: Path) -> list[str]:
-    return [
-        str(BIN_SERVIDOR), "--port", str(porta), "--workers", str(workers),
+def comando_servidor(tipo: str, porta: int, workers: int, fila: int,
+                     modelos: str, logs: Path) -> list[str]:
+    inicio = [sys.executable, str(SERVIDOR_PYTHON)] if tipo == "python" else [str(BIN_SERVIDOR)]
+    return inicio + [
+        "--port", str(porta), "--workers", str(workers),
         "--max-queue", str(fila), "--modelos", modelos, "--data-dir", str(DATA),
         "--log-dir", str(logs),
     ]
@@ -71,7 +79,7 @@ def rodar_experimento_unico(
     comando = (
         cmd_customizado
         if cmd_customizado is not None
-        else comando_servidor(porta, workers, max_queue, modelos, logs)
+        else comando_servidor(servidor_tipo, porta, workers, max_queue, modelos, logs)
     )
     servidor = subprocess.Popen(comando, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     monitor = None
@@ -116,25 +124,29 @@ def rodar_experimento_unico(
     return resumo
 
 
-def varrer_modelo(modelo: str, sinais: list[dict], workers: list[int], destino: Path, intervalo: float):
+def varrer_modelo(
+    modelo: str, sinais: list[dict], workers: list[int], destino: Path,
+    intervalo: float, servidor_tipo: str = "cpp",
+):
     return [
         rodar_experimento_unico(
             f"E0_{modelo}_W{w}", sinais, workers=w, modelos=modelo,
             intervalo_monitor=intervalo, pasta_saida=destino / f"{modelo}_W{w}",
+            servidor_tipo=servidor_tipo,
         )
         for w in workers
     ]
 
 
-def executar_e0_varredura() -> tuple[int, dict]:
-    print("\n=== E0: Varredura de Workers (30x30 e 60x60) ===")
-    destino = RESULTADOS / "E0_varredura_workers"
+def executar_e0_varredura(servidor_tipo: str = "cpp") -> tuple[int, dict]:
+    print(f"\n=== E0: Varredura de Workers ({servidor_tipo}, 30x30 e 60x60) ===")
+    destino = RESULTADOS / f"E0_varredura_workers_{servidor_tipo}"
     destino.mkdir(parents=True, exist_ok=True)
     workers = [1, 2, 3, 4, 6, 8, 12]
     seq30 = gerar_sequencia(6, 4, 100, 0.0, 0.05, ["30x30"])
     seq60 = gerar_sequencia(6, 2, 200, 0.0, 0.05, ["60x60"])
-    res30 = varrer_modelo("30x30", seq30, workers, destino, 0.15)
-    res60 = varrer_modelo("60x60", seq60, workers, destino, 0.2)
+    res30 = varrer_modelo("30x30", seq30, workers, destino, 0.15, servidor_tipo)
+    res60 = varrer_modelo("60x60", seq60, workers, destino, 0.2, servidor_tipo)
     maior = max(r["vazao_imagens_por_s"] for r in res60)
     candidatos = [r["workers"] for r in res60 if r["vazao_imagens_por_s"] >= maior * 0.95]
     otimo = min(candidatos, default=4)
@@ -151,39 +163,42 @@ def executar_e0_varredura() -> tuple[int, dict]:
     plt.close(fig)
     dados = {"w_otimo": otimo, "workers_testados": workers, "modelo_30x30": res30, "modelo_60x60": res60}
     salvar_json(destino / "resumo_e0.json", dados)
-    print(f"==> W_otimo escolhido pela varredura E0: W = {otimo}")
+    print(f"==> W_otimo escolhido pela varredura E0 ({servidor_tipo}): W = {otimo}")
     return otimo, dados
 
 
-def executar_bateria_completa(w_otimo_forcado: int | None = None) -> None:
-    otimo = w_otimo_forcado if w_otimo_forcado is not None else executar_e0_varredura()[0]
-    print(f"\n=== E1: Baseline Oficial (3 clientes x 15 sinais, W={otimo}) ===")
+def executar_bateria_completa(servidor_tipo: str = "cpp", w_otimo_forcado: int | None = None) -> None:
+    otimo = w_otimo_forcado if w_otimo_forcado is not None else executar_e0_varredura(servidor_tipo)[0]
+    print(f"\n=== E1: Baseline Oficial ({servidor_tipo}, 3 clientes x 15 sinais, W={otimo}) ===")
     seq1 = gerar_sequencia(3, 15, 42, 0.5, 2.0, ["30x30", "60x60"])
-    rodar_experimento_unico("E1_baseline_cpp", seq1, workers=otimo)
+    rodar_experimento_unico(f"E1_baseline_{servidor_tipo}", seq1, workers=otimo, servidor_tipo=servidor_tipo)
 
-    print("\n=== E2: Saturacao SEM Controle (24 clientes x 2 sinais) ===")
+    print(f"\n=== E2: Saturacao SEM Controle ({servidor_tipo}, 24 clientes x 2 sinais) ===")
     seq2 = gerar_sequencia(24, 2, 77, 0.0, 0.2, ["30x30", "60x60"])
-    rodar_experimento_unico("E2_saturacao_sem_controle", seq2, workers=12, intervalo_monitor=0.15)
+    rodar_experimento_unico(
+        f"E2_saturacao_sem_controle_{servidor_tipo}", seq2, workers=12,
+        intervalo_monitor=0.15, servidor_tipo=servidor_tipo,
+    )
 
     fila = 2 * otimo
-    print(f"\n=== E3: Saturacao COM Controle (W={otimo}, --max-queue {fila}) ===")
+    print(f"\n=== E3: Saturacao COM Controle ({servidor_tipo}, W={otimo}, --max-queue {fila}) ===")
     rodar_experimento_unico(
-        "E3_saturacao_com_controle", seq2, workers=otimo, max_queue=fila,
-        intervalo_monitor=0.15,
+        f"E3_saturacao_com_controle_{servidor_tipo}", seq2, workers=otimo, max_queue=fila,
+        intervalo_monitor=0.15, servidor_tipo=servidor_tipo,
     )
     gerar_relatorio_comparativo(
-        RESULTADOS / "E2_saturacao_sem_controle",
-        RESULTADOS / "E3_saturacao_com_controle",
-        RESULTADOS / "comparacao_E2_vs_E3",
+        RESULTADOS / f"E2_saturacao_sem_controle_{servidor_tipo}",
+        RESULTADOS / f"E3_saturacao_com_controle_{servidor_tipo}",
+        RESULTADOS / f"comparacao_E2_vs_E3_{servidor_tipo}",
     )
-    print("\nBateria E0-E3 concluida! Comparacao salva em resultados/comparacao_E2_vs_E3/")
+    print(f"\nBateria E0-E3 concluida! Comparacao salva em resultados/comparacao_E2_vs_E3_{servidor_tipo}/")
 
 
 def argumentos() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Executa experimento ou bateria E0-E3.")
     parser.add_argument("--cenario", choices=["custom", "E0", "E1", "E2", "E3", "todos"], default="custom")
     parser.add_argument("--nome", default="exp_cpp")
-    parser.add_argument("--servidor", default="cpp")
+    parser.add_argument("--servidor", choices=["cpp", "python"], default="cpp")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-queue", type=int, default=0)
     parser.add_argument("--clientes", type=int, default=3)
@@ -199,17 +214,20 @@ def argumentos() -> argparse.Namespace:
 def main() -> None:
     args = argumentos()
     if args.cenario == "todos":
-        executar_bateria_completa()
+        executar_bateria_completa(args.servidor)
         return
     if args.cenario == "E0":
-        executar_e0_varredura()
+        executar_e0_varredura(args.servidor)
         return
-    if args.cenario in {"E1", "E2", "E3"}:
-        clientes, sinais, seed, intervalo = (3, 15, 42, (0.5, 2.0)) if args.cenario == "E1" else (12, 4, 77, (0.0, 0.15))
-        seq = gerar_sequencia(clientes, sinais, seed, *intervalo, ["30x30", "60x60"])
+    if args.cenario in NOMES_CENARIOS:
+        if args.cenario == "E1":
+            seq = gerar_sequencia(3, 15, 42, 0.5, 2.0, ["30x30", "60x60"])
+        else:
+            seq = gerar_sequencia(12, 4, 77, 0.0, 0.15, ["30x30", "60x60"])
+        max_queue = 2 * args.workers if args.cenario == "E3" else 0
         rodar_experimento_unico(
-            f"{args.cenario}_{'baseline_cpp' if args.cenario == 'E1' else 'saturacao_' + ('sem_controle' if args.cenario == 'E2' else 'com_controle')}",
-            seq, workers=args.workers, max_queue=0 if args.cenario != "E3" else 2 * args.workers,
+            f"{NOMES_CENARIOS[args.cenario]}_{args.servidor}", seq,
+            workers=args.workers, max_queue=max_queue, servidor_tipo=args.servidor,
         )
         return
     itens = ler_sequencia_jsonl(args.sequencia) if args.sequencia else gerar_sequencia(
